@@ -9,6 +9,7 @@
 
 #import "FBElementCommands.h"
 
+#import "FBSpringboardApplication.h"
 #import "FBApplication.h"
 #import "FBConfiguration.h"
 #import "FBKeyboard.h"
@@ -39,6 +40,14 @@
 #import "XCUIElement.h"
 #import "XCUIElementQuery.h"
 #import "FBXCodeCompatibility.h"
+#import "XCAccessibilityElement.h"
+#import "XCAXClient_iOS.h"
+static int identifier = 0;
+static int ACTIVE_RETRY_COUNT = 2;
+static NSTimeInterval LAST_TIME_STAMP = 0;
+static NSTimeInterval FIT_TIME_INTERVAL = 0.1;
+const double DOUBLE_ZERO_COMPARE = 0.001;
+
 
 @interface FBElementCommands ()
 @end
@@ -78,9 +87,63 @@
     [[FBRoute POST:@"/wda/keys"] respondWithTarget:self action:@selector(handleKeys:)],
     [[FBRoute POST:@"/wda/pickerwheel/:uuid/select"] respondWithTarget:self action:@selector(handleWheelSelect:)],
     [[FBRoute POST:@"/wda/element/forceTouch/:uuid"] respondWithTarget:self action:@selector(handleForceTouch:)],
-    [[FBRoute POST:@"/wda/element/forceTouchByCoordinate/:uuid"] respondWithTarget:self action:@selector(handleForceTouchByCoordinateOnElement:)]
-  ];
+    [[FBRoute POST:@"/wda/element/forceTouchByCoordinate/:uuid"] respondWithTarget:self action:@selector(handleForceTouchByCoordinateOnElement:)],
+    [[FBRoute POST:@"/keepIdentifier"] respondWithTarget:self action:@selector(handleKeepCommand:)],
+    [[FBRoute POST:@"/activeApp"] respondWithTarget:self action:@selector(handleActiveCommand:)],
+    [[FBRoute POST:@"/goHome"] respondWithTarget:self action:@selector(handlegoHomeCommand:)],
+    [[FBRoute POST:@"/tapCenter"] respondWithTarget:self action:@selector(handlTapScreenCenter:)]
+    ];
 }
+
+
++ (int)currentIdentifier{
+  NSArray *arrays =[[XCAXClient_iOS sharedClient] activeApplications];
+  XCAccessibilityElement *activeApplicationElement = [arrays firstObject];
+  return activeApplicationElement.processIdentifier;
+}
+
++ (BOOL)tryToActiveApp{
+  int count = 0;
+  while(count < ACTIVE_RETRY_COUNT){
+    
+    [[FBSpringboardApplication fb_springboard] fb_tapApplicationWithIdentifier:@"抖音短视频内测" error:nil];
+    if ([self currentIdentifier] == identifier) {
+      return YES;
+    }
+    count++;
+  }
+  return NO;
+}
+
++ (id<FBResponsePayload>)handleKeepCommand:(FBRouteRequest *)request
+{
+  identifier = [self currentIdentifier];
+  
+  
+  return FBResponseWithOK();
+}
+
++ (id<FBResponsePayload>)handleActiveCommand:(FBRouteRequest *)request
+{
+  if (identifier == [self currentIdentifier]) {
+    return FBResponseWithOK();
+  }
+  NSTimeInterval currentTimeStamp = [[NSDate date] timeIntervalSince1970];
+  if ((currentTimeStamp - LAST_TIME_STAMP) > FIT_TIME_INTERVAL) {       // 这个方法会连续调用三次，在这个地方特殊处理，100ms内连续请求认为是重复回调。
+    [self tryToActiveApp];
+    LAST_TIME_STAMP = [[NSDate date] timeIntervalSince1970];
+  }
+  
+  return FBResponseWithOK();
+  
+}
+
++ (id<FBResponsePayload>)handlegoHomeCommand:(FBRouteRequest *)request
+{
+  [[XCUIDevice sharedDevice] fb_goToHomescreenWithError:nil];
+  return FBResponseWithOK();
+}
+
 
 
 #pragma mark - Commands
@@ -223,10 +286,10 @@
 
 + (id<FBResponsePayload>)handleTwoFingerTap:(FBRouteRequest *)request
 {
-    FBElementCache *elementCache = request.session.elementCache;
-    XCUIElement *element = [elementCache elementForUUID:request.parameters[@"uuid"]];
-    [element twoFingerTap];
-    return FBResponseWithOK();
+  FBElementCache *elementCache = request.session.elementCache;
+  XCUIElement *element = [elementCache elementForUUID:request.parameters[@"uuid"]];
+  [element twoFingerTap];
+  return FBResponseWithOK();
 }
 
 + (id<FBResponsePayload>)handleTouchAndHold:(FBRouteRequest *)request
@@ -276,7 +339,7 @@
 {
   FBElementCache *elementCache = request.session.elementCache;
   XCUIElement *element = [elementCache elementForUUID:request.parameters[@"uuid"]];
-
+  
   // Using presence of arguments as a way to convey control flow seems like a pretty bad idea but it's
   // what ios-driver did and sadly, we must copy them.
   NSString *const name = request.arguments[@"name"];
@@ -287,7 +350,7 @@
     }
     return [self.class handleScrollElementToVisible:childElement withRequest:request];
   }
-
+  
   NSString *const direction = request.arguments[@"direction"];
   if (direction) {
     NSString *const distanceString = request.arguments[@"distance"] ?: @"1.0";
@@ -303,7 +366,7 @@
     }
     return FBResponseWithOK();
   }
-
+  
   NSString *const predicateString = request.arguments[@"predicateString"];
   if (predicateString) {
     NSPredicate *formattedPredicate = [NSPredicate fb_formatSearchPredicate:[FBPredicate predicateWithFormat:predicateString]];
@@ -313,24 +376,62 @@
     }
     return [self.class handleScrollElementToVisible:childElement withRequest:request];
   }
-
+  
   if (request.arguments[@"toVisible"]) {
     return [self.class handleScrollElementToVisible:element withRequest:request];
   }
   return FBResponseWithErrorFormat(@"Unsupported scroll type");
 }
 
+
++ (id<FBResponsePayload>)handlTapScreenCenter:(FBRouteRequest *)request{
+  CGRect rect = [[UIScreen mainScreen] bounds];
+  CGPoint center = CGPointMake(rect.size.width / 2, rect.size.height / 2);
+  [[XCEventGenerator sharedGenerator]pressAtPoint:center forDuration:0.1 orientation:UIInterfaceOrientationUnknown handler:^(XCSynthesizedEventRecord *record, NSError *error) {
+    [FBLogger verboseLog:error.description];
+  }];
+  
+  return FBResponseWithOK();
+  
+  
+}
 + (id<FBResponsePayload>)handleDragCoordinate:(FBRouteRequest *)request
 {
-  FBSession *session = request.session;
+  //FBSession *session = request.session;
+  NSTimeInterval duration = [request.arguments[@"duration"] doubleValue];
+  if ((duration - 0) < DOUBLE_ZERO_COMPARE ) {
+    duration = 1;
+  }
   CGPoint startPoint = CGPointMake((CGFloat)[request.arguments[@"fromX"] doubleValue], (CGFloat)[request.arguments[@"fromY"] doubleValue]);
   CGPoint endPoint = CGPointMake((CGFloat)[request.arguments[@"toX"] doubleValue], (CGFloat)[request.arguments[@"toY"] doubleValue]);
-  NSTimeInterval duration = [request.arguments[@"duration"] doubleValue];
-  XCUICoordinate *endCoordinate = [self.class gestureCoordinateWithCoordinate:endPoint application:session.application shouldApplyOrientationWorkaround:isSDKVersionLessThan(@"11.0")];
-  XCUICoordinate *startCoordinate = [self.class gestureCoordinateWithCoordinate:startPoint application:session.application shouldApplyOrientationWorkaround:isSDKVersionLessThan(@"11.0")];
-  [startCoordinate pressForDuration:duration thenDragToCoordinate:endCoordinate];
+  
+  
+  [[XCEventGenerator sharedGenerator] pressAtPoint:startPoint forDuration:0 liftAtPoint:endPoint velocity: (1000/duration)  orientation:UIInterfaceOrientationUnknown name:@"iesqa_test" handler:^(XCSynthesizedEventRecord *record, NSError *error) {
+    [FBLogger verboseLog:error.description];
+  }];
   return FBResponseWithOK();
+  //  NSTimeInterval duration = [request.arguments[@"duration"] doubleValue];
+  //  NSTimeInterval velocity = 1 / duration * 500;
+  
+  //  XCUICoordinate *endCoordinate = [self.class gestureCoordinateWithCoordinate:endPoint application:session.application shouldApplyOrientationWorkaround:isSDKVersionLessThan(@"11.0")];
+  //  XCUICoordinate *startCoordinate = [self.class gestureCoordinateWithCoordinate:startPoint application:session.application shouldApplyOrientationWorkaround:isSDKVersionLessThan(@"11.0")];
+  //  [startCoordinate pressForDuration:duration thenDragToCoordinate:endCoordinate];
+  //
+  //  XCAccessibilityElement *activeApplicationElement = [[[XCAXClient_iOS sharedClient] activeApplications] firstObject];
+  //
+  //  FBApplication *application = [FBApplication fb_applicationWithPID:activeApplicationElement.processIdentifier];
+  //  NSArray *array = [application childrenMatchingType:XCUIElementTypeAny];
+  //  if (array) {
+  //
+  //  }
+  //  if (application) {
+  //    NSLog(@"%ld",application.accessibilityElements.count);
+  //  }
+  
+  // [[FBSpringboardApplication fb_springboard] fb_tapApplicationWithIdentifier:@"抖音短视频内测" error:nil];
+  
 }
+
 
 + (id<FBResponsePayload>)handleDrag:(FBRouteRequest *)request
 {
@@ -349,40 +450,44 @@
 
 + (id<FBResponsePayload>)handleSwipe:(FBRouteRequest *)request
 {
-    FBElementCache *elementCache = request.session.elementCache;
-    XCUIElement *element = [elementCache elementForUUID:request.parameters[@"uuid"]];
-    NSString *const direction = request.arguments[@"direction"];
-    if (!direction) {
-        return FBResponseWithErrorFormat(@"Missing 'direction' parameter");
-    }
-    if ([direction isEqualToString:@"up"]) {
-        [element swipeUp];
-    } else if ([direction isEqualToString:@"down"]) {
-        [element swipeDown];
-    } else if ([direction isEqualToString:@"left"]) {
-        [element swipeLeft];
-    } else if ([direction isEqualToString:@"right"]) {
-        [element swipeRight];
-    } else {
-      return FBResponseWithErrorFormat(@"Unsupported swipe type");
-    }
-    return FBResponseWithOK();
+  FBElementCache *elementCache = request.session.elementCache;
+  XCUIElement *element = [elementCache elementForUUID:request.parameters[@"uuid"]];
+  NSString *const direction = request.arguments[@"direction"];
+  if (!direction) {
+    return FBResponseWithErrorFormat(@"Missing 'direction' parameter");
+  }
+  if ([direction isEqualToString:@"up"]) {
+    [element swipeUp];
+  } else if ([direction isEqualToString:@"down"]) {
+    [element swipeDown];
+  } else if ([direction isEqualToString:@"left"]) {
+    [element swipeLeft];
+  } else if ([direction isEqualToString:@"right"]) {
+    [element swipeRight];
+  } else {
+    return FBResponseWithErrorFormat(@"Unsupported swipe type");
+  }
+  return FBResponseWithOK();
 }
 
 + (id<FBResponsePayload>)handleTap:(FBRouteRequest *)request
 {
-  FBElementCache *elementCache = request.session.elementCache;
+  //FBElementCache *elementCache = request.session.elementCache;
   CGPoint tapPoint = CGPointMake((CGFloat)[request.arguments[@"x"] doubleValue], (CGFloat)[request.arguments[@"y"] doubleValue]);
-  XCUIElement *element = [elementCache elementForUUID:request.parameters[@"uuid"]];
-  if (nil == element) {
-    XCUICoordinate *tapCoordinate = [self.class gestureCoordinateWithCoordinate:tapPoint application:request.session.application shouldApplyOrientationWorkaround:isSDKVersionLessThan(@"11.0")];
-    [tapCoordinate tap];
-  } else {
-    NSError *error;
-    if (![element fb_tapCoordinate:tapPoint error:&error]) {
-      return FBResponseWithError(error);
-    }
-  }
+  //  XCUIElement *element = [elementCache elementForUUID:request.parameters[@"uuid"]];
+  //  if (nil == element) {
+  //    XCUICoordinate *tapCoordinate = [self.class gestureCoordinateWithCoordinate:tapPoint application:request.session.application shouldApplyOrientationWorkaround:isSDKVersionLessThan(@"11.0")];
+  //    [tapCoordinate tap];
+  //  } else {
+  //    NSError *error;
+  //    if (![element fb_tapCoordinate:tapPoint error:&error]) {
+  //      return FBResponseWithError(error);
+  //    }
+  //  }
+  [[XCEventGenerator sharedGenerator]pressAtPoint:tapPoint forDuration:0.1 orientation:UIInterfaceOrientationUnknown handler:^(XCSynthesizedEventRecord *record, NSError *error) {
+    [FBLogger verboseLog:error.description];
+  }];
+  
   return FBResponseWithOK();
 }
 
@@ -412,9 +517,9 @@
   CGRect frame = request.session.application.wdFrame;
   CGSize screenSize = FBAdjustDimensionsForApplication(frame.size, request.session.application.interfaceOrientation);
   return FBResponseWithStatus(FBCommandStatusNoError, @{
-    @"width": @(screenSize.width),
-    @"height": @(screenSize.height),
-  });
+                                                        @"width": @(screenSize.width),
+                                                        @"height": @(screenSize.height),
+                                                        });
 }
 
 + (id<FBResponsePayload>)handleElementScreenshot:(FBRouteRequest *)request
@@ -478,7 +583,7 @@ static const CGFloat DEFAULT_OFFSET = (CGFloat)0.2;
 
 /**
  Returns gesture coordinate for the application based on absolute coordinate
-
+ 
  @param coordinate absolute screen coordinates
  @param application the instance of current application under test
  @shouldApplyOrientationWorkaround whether to apply orientation workaround. This is to
@@ -535,3 +640,4 @@ static const CGFloat DEFAULT_OFFSET = (CGFloat)0.2;
 }
 
 @end
+
