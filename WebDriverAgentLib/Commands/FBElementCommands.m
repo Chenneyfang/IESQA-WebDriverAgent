@@ -42,6 +42,9 @@
 #import "FBXCodeCompatibility.h"
 #import "XCAccessibilityElement.h"
 #import "XCAXClient_iOS.h"
+#import <sys/utsname.h>
+
+
 static int identifier = 0;
 static int ACTIVE_RETRY_COUNT = 2;
 static NSTimeInterval LAST_TIME_STAMP = 0;
@@ -55,6 +58,45 @@ const double DOUBLE_ZERO_COMPARE = 0.001;
 @implementation FBElementCommands
 
 #pragma mark - <FBCommandHandler>
+
++(BOOL)model:(NSString *)model inArray:(NSArray *)array{
+  for (NSString *obj in array) {
+    if ([obj isEqualToString:model]) {
+      return YES;
+    }
+  }
+  return NO;
+}
+
++(CGSize)screenSize{
+  
+  struct utsname systemInfo;
+  uname(&systemInfo);
+  NSString *model =  [NSString stringWithCString:systemInfo.machine encoding:NSUTF8StringEncoding];
+  
+  if ([FBElementCommands model:model inArray:@[@"iPhone3,1", @"iPhone3,2", @"iPhone4,1"]]) {
+    return  CGSizeMake(320, 480);
+  }
+  if ([FBElementCommands model:model inArray:@[@"iPhone5,1", @"iPhone5,2", @"iPhone5,3", @"iPhone5,4", @"iPhone6,1", @"iPhone6,2", @"iPhone8,4"]]) {
+    return  CGSizeMake(320, 568);
+  }
+  if ([FBElementCommands model:model inArray:@[@"iPhone7,2", @"iPhone8,1", @"iPhone9,1", @"iPhone9,3", @"iPhone10,1", @"iPhone10,4"]]) {
+    return  CGSizeMake(375, 667);
+  }
+  if ([FBElementCommands model:model inArray:@[@"iPhone7,1", @"iPhone8,2", @"iPhone9,2", @"iPhone9,4", @"iPhone10,2", @"iPhone10,5"]]) {
+    return  CGSizeMake(414, 736);
+  }
+  if ([FBElementCommands model:model inArray:@[@"iPhone10,3", @"iPhone10,6", @"iPhone11,2"]]) {
+    return  CGSizeMake(375, 812);
+  }
+  if ([FBElementCommands model:model inArray:@[@"iPhone11,8"]]) {
+    return CGSizeMake(413, 896);
+  }
+  if ([FBElementCommands model:model inArray:@[@"iPhone11,6"]]) {
+    return CGSizeMake(414, 896);
+  }
+  return CGSizeZero;
+}
 
 + (NSArray *)routes
 {
@@ -398,17 +440,29 @@ const double DOUBLE_ZERO_COMPARE = 0.001;
 + (id<FBResponsePayload>)handleDragCoordinate:(FBRouteRequest *)request
 {
   //FBSession *session = request.session;
-  NSTimeInterval duration = [request.arguments[@"duration"] doubleValue];
+  NSTimeInterval duration = (NSTimeInterval)[request.arguments[@"duration"] doubleValue];
   if ((duration - 0) < DOUBLE_ZERO_COMPARE ) {
     duration = 1;
   }
-  CGPoint startPoint = CGPointMake((CGFloat)[request.arguments[@"fromX"] doubleValue], (CGFloat)[request.arguments[@"fromY"] doubleValue]);
-  CGPoint endPoint = CGPointMake((CGFloat)[request.arguments[@"toX"] doubleValue], (CGFloat)[request.arguments[@"toY"] doubleValue]);
+//  CGPoint startPoint = CGPointMake((CGFloat)[request.arguments[@"fromX"] doubleValue], (CGFloat)[request.arguments[@"fromY"] doubleValue]);
+//  CGPoint endPoint = CGPointMake((CGFloat)[request.arguments[@"toX"] doubleValue], (CGFloat)[request.arguments[@"toY"] doubleValue]);
   
+  CGSize size = [self screenSize];
+  double start_x_offset = (double)[request.arguments[@"fromX"] doubleValue];
+  double start_y_offset = (double)[request.arguments[@"fromY"] doubleValue];
   
-  [[XCEventGenerator sharedGenerator] pressAtPoint:startPoint forDuration:0 liftAtPoint:endPoint velocity: (1000/duration)  orientation:UIInterfaceOrientationUnknown name:@"iesqa_test" handler:^(XCSynthesizedEventRecord *record, NSError *error) {
+  double end_x_offset = (double)[request.arguments[@"toX"] doubleValue];
+  double end_y_offset = (double)[request.arguments[@"toY"] doubleValue];
+  
+  CGPoint startPoint = CGPointMake(start_x_offset * size.width, start_y_offset * size.height);
+  CGPoint endPoint = CGPointMake(end_x_offset * size.width, end_y_offset * size.height);
+  
+  [[XCEventGenerator sharedGenerator] pressAtPoint:startPoint forDuration:0 liftAtPoint:endPoint velocity: (5000/duration)  orientation:UIInterfaceOrientationUnknown name:nil handler:^(XCSynthesizedEventRecord *record, NSError *error) {
     [FBLogger verboseLog:error.description];
   }];
+  
+  
+  
   return FBResponseWithOK();
   //  NSTimeInterval duration = [request.arguments[@"duration"] doubleValue];
   //  NSTimeInterval velocity = 1 / duration * 500;
@@ -473,7 +527,13 @@ const double DOUBLE_ZERO_COMPARE = 0.001;
 + (id<FBResponsePayload>)handleTap:(FBRouteRequest *)request
 {
   //FBElementCache *elementCache = request.session.elementCache;
-  CGPoint tapPoint = CGPointMake((CGFloat)[request.arguments[@"x"] doubleValue], (CGFloat)[request.arguments[@"y"] doubleValue]);
+  
+  double x_offset = (CGFloat)[request.arguments[@"x"] doubleValue];
+  double y_offset = (CGFloat)[request.arguments[@"y"] doubleValue];
+  CGSize size = [self screenSize];
+  CGPoint tapPoint = CGPointMake(x_offset * size.width, y_offset * size.height);
+  
+  //CGPoint tapPoint = CGPointMake((CGFloat)[request.arguments[@"x"] doubleValue], (CGFloat)[request.arguments[@"y"] doubleValue]);
   //  XCUIElement *element = [elementCache elementForUUID:request.parameters[@"uuid"]];
   //  if (nil == element) {
   //    XCUICoordinate *tapCoordinate = [self.class gestureCoordinateWithCoordinate:tapPoint application:request.session.application shouldApplyOrientationWorkaround:isSDKVersionLessThan(@"11.0")];
