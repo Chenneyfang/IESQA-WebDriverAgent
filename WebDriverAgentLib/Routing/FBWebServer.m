@@ -29,12 +29,12 @@
 #import <objc/runtime.h>
 #import "XCUIScreen.h"
 #import "XCAXClient_iOS.h"
+//#import "IQCaptureHelper.h"
 
-
+static int count = 0;
 
 static NSString *const FBServerURLBeginMarker = @"ServerURLHere->";
 static NSString *const FBServerURLEndMarker = @"<-ServerURLHere";
-static int count = 0;
 
 @interface FBHTTPConnection : RoutingConnection
 @end
@@ -54,6 +54,7 @@ static int count = 0;
 @property (nonatomic, strong) FBExceptionHandler *exceptionHandler;
 @property (nonatomic, strong) RoutingHTTPServer *server;
 @property (atomic, assign) BOOL keepAlive;
+@property (nonatomic, strong) NSTimer *timer;
 //@property (nonatomic, strong) NSTimer *timer;
 
 @end
@@ -75,13 +76,23 @@ static int count = 0;
   return handlers.copy;
 }
 
+-(void)fetchImageData:(NSData *)imageData{
+  count += 1;
+  if (count > 10) {
+    [IQCaptureHelper stopCapture];
+  }
+}
+
 - (void)startServing
 {
-  
+//  
 //  self.timer = [NSTimer scheduledTimerWithTimeInterval:0.001 target:self selector:@selector(timerHandler) userInfo:nil repeats:YES];
 //
 //  [[NSRunLoop currentRunLoop] addTimer:self.timer forMode:NSDefaultRunLoopMode];
 //  [self.timer fire];
+  [IQCaptureHelper IQCaputreWithInterval:0.01 andDelegate:self];
+  [IQCaptureHelper startCapture];
+
   [FBLogger logFmt:@"Built at %s %s", __DATE__, __TIME__];
   self.exceptionHandler = [FBExceptionHandler new];
   [self startHTTPServer];
@@ -92,54 +103,56 @@ static int count = 0;
          [runLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]]);
 }
 
--(void)timerHandler{
-  NSData * data = nil;
-//  id xcScreen = NSClassFromString(@"XCUIScreen");
-//  if (xcScreen) {
-//    data = (NSData *)[xcScreen valueForKeyPath:@"mainScreen.screenshot.PNGRepresentation"];
+
+//
+//-(void)timerHandler{
+//  NSData * data = nil;
+////  id xcScreen = NSClassFromString(@"XCUIScreen");
+////  if (xcScreen) {
+////    data = (NSData *)[xcScreen valueForKeyPath:@"mainScreen.screenshot.PNGRepresentation"];
+////  }
+////  XCUIApplication *app = FBApplication.fb_activeApplication;
+////  CGSize screenSize = FBAdjustDimensionsForApplication(app.frame.size, app.interfaceOrientation);
+////  NSUInteger quality = 1;
+//  NSError *err;
+//  CGRect screenRect = CGRectMake(0, 0, 414, 736);
+//
+//  NSTimeInterval timeStamp = [[NSDate date] timeIntervalSince1970];
+//  //data = [[XCUIScreen mainScreen] _screenshotDataForQuality:1 rect:screenRect error:&err];
+//  //data = [[XCUIScreen mainScreen] _clippedScreenshotData:0 quality:1 rect:screenRect scale:1];
+//  data = (NSData *)[[XCUIScreen mainScreen] screenshotDataForQuality:1 rect:screenRect error:&err];
+////  id xcScreen = NSClassFromString(@"XCUIScreen");
+////  data = [xcScreen valueForKeyPath:@"mainScreen.screenshot.PNGRepresentation"];
+//
+//  NSLog(@"1111111 %lf",[[NSDate date] timeIntervalSince1970]- timeStamp);
+//  if (data) {
+//    NSFileManager *fileManager = [NSFileManager defaultManager];
+//    //创建document路径
+//    NSString *path = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+//
+//    NSString *filePath = [NSString stringWithFormat:@"%@/%lf.png",path,timeStamp];
+//    NSLog(@"%@", filePath);
+//    //查找文件，如果没有就创建一个文件u
+//    if (![fileManager fileExistsAtPath: filePath]) {
+//      BOOL isSuccess = [fileManager createFileAtPath:filePath contents:nil attributes:nil];
+//      NSLog(@"isSiccess = %d",isSuccess);
+//    }
+//    NSError *error = nil;
+//
+//    BOOL isSuccess = [data writeToFile:filePath atomically:YES];
+//    if (isSuccess && error == nil) {
+//      NSLog(@"存储成功！！！");
+//    }else{
+//      NSLog(@"error = %@",error);
+//      NSLog(@"存储失败！！！");
+//    }
+//
+//    //[data writeToFile:ph atomically:YES];
+//    //    [manager createFileAtPath:ph contents:data attributes:nil];
+//    count += 1;
 //  }
-//  XCUIApplication *app = FBApplication.fb_activeApplication;
-//  CGSize screenSize = FBAdjustDimensionsForApplication(app.frame.size, app.interfaceOrientation);
-//  NSUInteger quality = 1;
-  NSError *err;
-  CGRect screenRect = CGRectMake(0, 0, 414, 736);
-  
-  NSTimeInterval timeStamp = [[NSDate date] timeIntervalSince1970];
-  //data = [[XCUIScreen mainScreen] _screenshotDataForQuality:1 rect:screenRect error:&err];
-  //data = [[XCUIScreen mainScreen] _clippedScreenshotData:0 quality:1 rect:screenRect scale:1];
-  data = (NSData *)[[XCUIScreen mainScreen] screenshotDataForQuality:1 rect:screenRect error:&err];
-//  id xcScreen = NSClassFromString(@"XCUIScreen");
-//  data = [xcScreen valueForKeyPath:@"mainScreen.screenshot.PNGRepresentation"];
-
-  NSLog(@"1111111 %lf",[[NSDate date] timeIntervalSince1970]- timeStamp);
-  if (data) {
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    //创建document路径
-    NSString *path = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-
-    NSString *filePath = [NSString stringWithFormat:@"%@/%lf.png",path,timeStamp];
-    NSLog(@"%@", filePath);
-    //查找文件，如果没有就创建一个文件u
-    if (![fileManager fileExistsAtPath: filePath]) {
-      BOOL isSuccess = [fileManager createFileAtPath:filePath contents:nil attributes:nil];
-      NSLog(@"isSiccess = %d",isSuccess);
-    }
-    NSError *error = nil;
-
-    BOOL isSuccess = [data writeToFile:filePath atomically:YES];
-    if (isSuccess && error == nil) {
-      NSLog(@"存储成功！！！");
-    }else{
-      NSLog(@"error = %@",error);
-      NSLog(@"存储失败！！！");
-    }
-  
-    //[data writeToFile:ph atomically:YES];
-    //    [manager createFileAtPath:ph contents:data attributes:nil];
-    count += 1;
-  }
-  
-}
+//
+//}
 
 - (void)startHTTPServer
 {
@@ -254,5 +267,6 @@ static int count = 0;
 
   [self registerRouteHandlers:@[FBUnknownCommands.class]];
 }
+
 
 @end
