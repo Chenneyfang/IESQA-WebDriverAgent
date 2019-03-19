@@ -90,8 +90,8 @@ static NSString *const FBServerURLEndMarker = @"<-ServerURLHere";
 //
 //  [[NSRunLoop currentRunLoop] addTimer:self.timer forMode:NSDefaultRunLoopMode];
 //  [self.timer fire];
-  [IQCaptureHelper IQCaputreWithInterval:0.01 andDelegate:self];
-  [IQCaptureHelper startCapture];
+//  [IQCaptureHelper IQCaputreWithInterval:0.01 andDelegate:self];
+//  [IQCaptureHelper startCapture];
 
   [FBLogger logFmt:@"Built at %s %s", __DATE__, __TIME__];
   self.exceptionHandler = [FBExceptionHandler new];
